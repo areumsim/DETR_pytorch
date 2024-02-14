@@ -1,0 +1,33 @@
+
+data_dir : "C:/Users/sar10/code/detr/cocodataset/"
+train_set  : "val2017"  # "train2017"
+# valid_set  : "val2017" 
+
+batch_size : 3
+learning_rate : 0.00001
+num_epoch : 10
+n_dim : 256
+
+baackbone_params:
+    n_channel : 256
+
+tf_model_params:
+    d_model: 256   # model Dimension
+    # n_words: 800  # Total number of words
+    drpoout_p: 0.2  # dropout rate 
+    # max_len: 800   # Maximum length of input (one sentence)
+
+    encoder_params:
+      n_hidden: 2048
+      # n_head: 8
+      # n_iter: 10
+      n_head: 2
+      n_iter: 2
+
+    decoder_params:
+      n_hidden: 2048
+      n_head: 2
+      n_iter: 2
+      activation: "relu"
+      x_shape: [1, 10, 256] # batch, max of Obj cnt , d_model
+      n_queries: 44

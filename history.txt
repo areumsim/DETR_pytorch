@@ -1,0 +1,21 @@
+
+
+[ dataloader_v1.py ]
+- transform으로 resize
+
+[ dataloader_v2.py ]
+- import imgaug.augmenters as iaa
+    : resize, augmentation 적용 (image, bbs 동시)
+
+[ dataloader_v3.py ]
+- rezise 대신 padding (논문과 동일하게)
+
+
+-----------------------------------
+
+[Embedding_PosEncoding.py]
+
+- learnable positinal encoding
+- 
+
+
