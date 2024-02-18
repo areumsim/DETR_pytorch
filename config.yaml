@@ -1,14 +1,17 @@
 
-data_dir : "C:/Users/sar10/code/detr/cocodataset/"
-train_set  : "val2017"  # "train2017"
+# data_dir : "C:/Users/sar10/code/detr/cocodataset/"
+data_dir : 'C:/Users/wolve/arsim/detr_git/DETR_pytorch/cocodataset/'
+train_set : "val2017"   # "train2017"
 # valid_set  : "val2017" 
 
-batch_size : 3
-learning_rate : 0.00001
+batch_size : 16
+learning_rate : 1.e-4
+weight_decay : 1.e-4
 num_epoch : 10
 n_dim : 256
+n_class : 81
 
-baackbone_params:
+backbone_params:
     n_channel : 256
 
 tf_model_params:
@@ -21,13 +24,12 @@ tf_model_params:
       n_hidden: 2048
       # n_head: 8
       # n_iter: 10
-      n_head: 2
+      n_head: 4
       n_iter: 2
 
     decoder_params:
       n_hidden: 2048
-      n_head: 2
+      n_head: 4
       n_iter: 2
-      activation: "relu"
-      x_shape: [1, 10, 256] # batch, max of Obj cnt , d_model
-      n_queries: 44
+      activation: "gelu"
+      x_shape: [1, 100, 256] # [batch, max of Obj cnt, d_model]

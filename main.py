@@ -1,20 +1,18 @@
+import cv2
 import torch
-import torch.nn as nn
-from einops import rearrange, repeat
-
 import yaml
-
-import torchvision.models as models
-from torchvision import transforms
-from TF_module.decoder import MultipleDecoder
-from TF_module.encoder import MultipleEncoder
-from backbone.EncoderCNN import EncoderCNN_resNet
+from einops import asnumpy, rearrange, repeat
+import numpy as np
 
 from backbone.dataloader_v3 import COCODataset, DataLoader, make_transforms
-from Embedding_PosEncoding import PositionalEncoding, PositionalEncoding_fix
+from detr import DETR
+from tqdm import tqdm
 
-# from backbone.dataloader_v4 import make_transforms
-
+def box_cxcywh_to_xyxy(x):
+    x_c, y_c, w, h = x.unbind(-1)
+    b = [(x_c - 0.5 * w), (y_c - 0.5 * h),
+         (x_c + 0.5 * w), (y_c + 0.5 * h)]
+    return torch.stack(b, dim=-1)
 
 if __name__ == "__main__":
     # CUDA Version: 12.2
@@ -27,16 +25,11 @@ if __name__ == "__main__":
         cfg = yaml.safe_load(stream)
 
     batch_size = cfg["batch_size"]
-    learning_rate = cfg["learning_rate"]
     num_epoch = cfg["num_epoch"]
 
     data_dir = cfg["data_dir"]
     train_set = cfg["train_set"]
     # valid_set = cfg["valid_set"]
-
-    n_channel = cfg["baackbone_params"]["n_channel"]
-
-    n_dim = cfg["n_dim"]
 
     img_w = 320
     img_h = 320
@@ -47,77 +40,87 @@ if __name__ == "__main__":
         image_set=train_set,
         visualize=False,
         transform=make_transforms(train_set),
+        width=img_w,
+        height=img_h
     )
 
-    coco_train.update_ImageSize(img_w, img_h)
-    loader_train = DataLoader(coco_train, batch_size=batch_size, shuffle=False)
-    cnn_model = EncoderCNN_resNet(n_channel).to(device)
+    # coco_train.update_ImageSize(img_w, img_h)
+    loader_train = DataLoader(coco_train, batch_size=batch_size, shuffle=True)
 
-    # train 할 때 -> pos 고정 (그대로 쓰기)
-    positionalEncoding = PositionalEncoding_fix(n_dim).to(device)
-    pos = positionalEncoding(batch_size, img_w // 32, img_h // 32)
 
-    for i_batch, (image, label, mask) in enumerate(loader_train):
-        # ## Assuming CHW format, convert to HWC
-        # img = rearrange(img, "c h w -> h w c")
-        # labels : bbox_x1, bbox_y1, bbox_x2, bbox_y2, label = ann.astype(int)
+    ###### model ######
+    detr_model = DETR(cfg).cuda()
 
-        images = image.to(device)  # [batch, 3, 640, 640] : b c w h
-        labels = label.to(device)
+    ###### optimizer ######
+    optimizer = torch.optim.AdamW(detr_model.parameters(), lr=cfg["learning_rate"], weight_decay=cfg['weight_decay'])
+    for epoch in range(num_epoch):
+        bar = tqdm(loader_train)
+        for i_batch, (image, label, mask) in enumerate(bar):
+            # ## Assuming CHW format, convert to HWC
+            # img = rearrange(img, "c   h w -> h w c")
+            # labels : bbox_x1, bbox_y1, bbox_x2, bbox_y2, label = ann.astype(int)
 
-        # Forward pass
-        image_features = cnn_model(images)  # [8, 256, 20, 20] : "b c h w"
+            images = image.to(device).float()  # [b, 3, 320, 320] : b c H W
+            labels = label.to(device).float()
 
-        ### encoder ###
-        multipleEncoder = MultipleEncoder(cfg["tf_model_params"]).to(device)
-        en_output = multipleEncoder(image_features, pos)
-        en_output = en_output.to(device)  # "b (h w) c"
+            optimizer.zero_grad()
+            prob_class, predict_bbox, loss = detr_model(images, labels)
 
-        ### decoder ###
-        multipleDecoder = MultipleDecoder(cfg=cfg["tf_model_params"]).to(device)
-        de_output = multipleDecoder(en_output=en_output, pos=pos)
-        print(de_output.shape)
+            loss.backward()
+            optimizer.step()
 
-        ### loss for training
-        # gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+            bar.set_postfix(loss=loss.item())
+            # print(f"loss: {loss.item()}")
 
-        # targets = self.prepare_targets(gt_instances)
-        # loss_dict = self.criterion(output, targets)
-        # weight_dict = self.criterion.weight_dict
-        # for k in loss_dict.keys():
-        #     if k in weight_dict:
-        #         loss_dict[k] *= weight_dict[k]
-        # return loss_dict
 
-    #################
-    # for i_batch, (image, label, mask) in enumerate(loader_train):
-    #     # ## Assuming CHW format, convert to HWC
-    #     # img = rearrange(img, "c h w -> h w c")
-    #     # labels : bbox_x1, bbox_y1, bbox_x2, bbox_y2, label = ann.astype(int)
+            # for evaluation, draw a predicted bbox and class label
+            if i_batch % 50 == 0:
+                i = 0
+                img = images[i].cpu().numpy().copy()
+                img *= np.array([0.229, 0.224, 0.225])[:,None,None]
+                img += np.array([0.485, 0.456, 0.406])[:,None,None]
+                img = rearrange(img, "c h w -> h w c")
+                img = img * 255
+                img = img.astype(np.uint8)
 
-    #     images = image.to(device)  # torch.Size([batch, 3, 640, 640])
-    #     labels = label.to(device)
+                lb = labels[i].cpu()
+                lb[:,:4] = box_cxcywh_to_xyxy(lb[:,:4])
+                lb = lb.numpy()
 
-    #     # Forward pass
-    #     image_features = cnn_model(images)  # torch.Size([8, 256, 20, 20])
+                _predict_bbox = predict_bbox[i].cpu().detach().numpy()
+                _prob_class = prob_class[i].cpu().detach().numpy()
 
-    #     # positionalEncoding = PositionalEncoding_learnable(n_dim).to(device)
-    #     positionalEncoding = PositionalEncoding(n_dim).to(device)
+                # draw bbox
+                for j in range(len(_predict_bbox)):
+                    bbox = _predict_bbox[j]*320
+                    bbox = rearrange(bbox, "c -> () c")
+                    bbox = bbox[0].astype(int)
+                    x, y, w, h = bbox
+                    # bbox to xyxy
+                    x1, y1, x2, y2 = int(x-w*0.5), int(y-h*0.5), int(x+w*0.5), int(y+h*0.5)
 
-    #     ###### encoder input : image_fetaure_pos ######
-    #     image_fetaure_pos = positionalEncoding(image_features)  #  b (h w) c
-    #     pos = positionalEncoding.get_pos_encoding()
+                    img = cv2.rectangle(img.copy(), (x1, y1), (x2, y2), (0, 0, 255), 2)
 
-    #     ### encoder ###
-    #     multipleEncoder = MultipleEncoder(cfg["tf_model_params"]).to(device)
-    #     encoder_output = multipleEncoder(image_fetaure_pos)
-    #     encoder_output = encoder_output.to(device)
-    #     # print(en)  # torch.Size([8, 400, 256])
+                # draw class label
+                for j in range(len(_prob_class.argmax(1))):
+                    score = _prob_class.argmax(1)[j]
+                    score = score.astype(int)
+                    img = cv2.putText(img, str(score), (bbox[0], bbox[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-    #     ### decoder ###
-    #     # de_input = torch.randn((8, 800, 256), device=device)
-    #     # de_input = torch.zeros((labels.shape[0], labels.shape[1], 256), device=device)
+                # draw ground truth bbox
+                for ann in lb:
+                    bbox_x1, bbox_y1, bbox_x2, bbox_y2, lab = ann.astype(int)
 
-    #     multipleDecoder = MultipleDecoder(cfg=cfg["tf_model_params"]).to(device)
-    #     de = multipleDecoder(x=labels, e=encoder_output, pos=pos)
-    #     print(de.shape)
+
+                    c = (
+                        (np.random.random((1, 3)) * 0.6 * 255 + 0.4 * 255)
+                        .astype(np.uint8)
+                        .tolist()[0]
+                    )
+                    img = cv2.rectangle(
+                        img.copy(), (bbox_x1, bbox_y1), (bbox_x2, bbox_y2), color=c, thickness=2
+                    )
+
+                # cv2.imshow("", cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+                cv2.imwrite(f"result_{epoch}_{i_batch}.jpg", cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+                cv2.waitKey(0)

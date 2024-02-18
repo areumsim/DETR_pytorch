@@ -42,9 +42,16 @@ def make_transforms(image_set):
     )
 
 
+# def box_xyxy_to_cxcywh(x):
+#     x0, y0, x1, y1 = x.unbind(-1)
+#     b = [(x0 + x1) / 2, (y0 + y1) / 2,
+#          (x1 - x0), (y1 - y0)]
+#     return torch.stack(b, dim=-1)
+
+
 class COCODataset(Dataset):
     def __init__(
-        self, data_dir, image_set, transform=None, visualize=True, collate_fn=None
+        self, data_dir, image_set, transform=None, visualize=True, collate_fn=None, width=640, height=640
     ):
         super(COCODataset, self).__init__()
 
@@ -78,13 +85,37 @@ class COCODataset(Dataset):
 
         self.load_classes()  # read class information
 
-        self.width = 640
-        self.height = 640
+        self.width = width
+        self.height = height
 
         ### category Info
         # self.catIds = self.coco.getCatIds(catNms=["person"])
         # self.catCnt = len(self.coco.getCatIds())
         # self.imgIds = self.coco.getImgIds(catIds=self.catIds)
+
+
+        self.seq = iaa.Sequential(
+            [
+                iaa.Resize((0.4, 0.5)),
+                iaa.SomeOf(
+                    1,
+                    [
+                        iaa.AdditiveLaplaceNoise(scale=(0, 0.2 * 255)),
+                        iaa.Fliplr(0.5),
+                        iaa.Add(50, per_channel=True),
+                        iaa.Sharpen(alpha=0.5),
+                        # iaa.CropAndPad(percent=(-0.25, 0.25)),
+                    ],
+                ),
+                # iaa.PadToFixedSize(
+                #     width=self.width, height=self.height, position="center"
+                # ),
+                iaa.Resize(
+                    {"height": self.height, "width": self.width}
+                ),
+                
+            ]
+        )
 
     def __len__(self):
         return len(self.image_ids)
@@ -169,7 +200,7 @@ class COCODataset(Dataset):
 
         for ann in anns:
             bbox_x1, bbox_y1, bbox_x2, bbox_y2, label = ann
-            if label == -1:  # TODO : or Show No Obj
+            if label == 80:  # -1, No Obj #TODO : or Show No Obj
                 continue
 
             c = (np.random.random((1, 3)) * 0.6 + 0.4).tolist()[0]
@@ -199,9 +230,9 @@ class COCODataset(Dataset):
 
         plt.show()
 
-    def update_ImageSize(self, width, height):
-        self.width = width
-        self.height = height
+    # def update_ImageSize(self, width, height):
+    #     self.width = width
+    #     self.height = height
 
     def __getitem__(self, idx):  # 인덱스에 접근할 때 호출
         image = self.load_image(idx)
@@ -214,24 +245,7 @@ class COCODataset(Dataset):
         # resize_height, resize_width = int(image.shape[0] * resize_ratio), int(
         #     image.shape[1] * resize_ratio
         # )
-        seq = iaa.Sequential(
-            [
-                iaa.Resize((0.4, 0.5)),
-                iaa.SomeOf(
-                    1,
-                    [
-                        iaa.AdditiveLaplaceNoise(scale=(0, 0.2 * 255)),
-                        iaa.Fliplr(0.5),
-                        iaa.Add(50, per_channel=True),
-                        iaa.Sharpen(alpha=0.5),
-                        # iaa.CropAndPad(percent=(-0.25, 0.25)),
-                    ],
-                ),
-                iaa.PadToFixedSize(
-                    width=self.width, height=self.height, position="center"
-                ),
-            ]
-        )
+
 
         original_img_pos = [0, 0, image.shape[1], image.shape[0], -99]
         annotation = np.vstack([annotation, original_img_pos])
@@ -244,7 +258,7 @@ class COCODataset(Dataset):
         )
 
         # Augment BBs and images.
-        image, bbs = seq(image=image, bounding_boxes=bbs)
+        image, bbs = self.seq(image=image, bounding_boxes=bbs)
         annotation[:, :-1] = np.array(
             [[bb.x1, bb.y1, bb.x2, bb.y2] for bb in bbs.bounding_boxes]
         )
@@ -272,6 +286,18 @@ class COCODataset(Dataset):
         # boxes = torch.FloatTensor(annotation[:, :4])
         # labels = torch.LongTensor(annotation[:, 4])
         padding_mask = torch.tensor(rearrange(padding_mask, "h w c -> c h w"))
+        annotation[:,4][annotation[:,4]==-1] = 80
+
+        # box_xyxy_to_cxcywh
+        x0 = annotation[:,0]
+        y0 = annotation[:,1]
+        x1 = annotation[:,2]
+        y1 = annotation[:,3]
+
+        b = [(x0 + x1) / 2, (y0 + y1) / 2,
+            (x1 - x0), (y1 - y0)]
+        annotation[:,:4] = np.array(b).T
+
         return image, annotation, padding_mask
 
 

@@ -113,14 +113,14 @@ class PositionalEncoding_fix(nn.Module):
 
         self.pos_encoding = row_embed + col_embed
 
-    def get_pos_encoding(self):
-        return self.pos_encoding
+    # def get_pos_encoding(self):
+    #     return self.pos_encoding
 
     def forward(self, batch_size, img_w, img_h):
-        self.pos_encoding = self.pos_encoding[:img_w, :img_h, :]
-        self.pos_encoding = repeat(self.pos_encoding, "h w c-> b c h w", b=batch_size)
+        pos_encoding = self.pos_encoding[:img_w, :img_h, :]
+        pos_encoding = repeat(pos_encoding, "h w c-> b c h w", b=batch_size)
         # return rearrange(self.pos_encoding, "b c h w-> b (h w) c")
-        return self.pos_encoding
+        return pos_encoding
 
 
 if __name__ == "__main__":
