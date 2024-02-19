@@ -1,5 +1,7 @@
 cocodataset
 cocodataset_tmp
+result_image
+result_image_t
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -94,7 +94,11 @@ class PositionalEncoding(nn.Module):
 
 
 class PositionalEncoding_fix(nn.Module):
-    def __init__(self, dim_model, max_len=50):
+    def __init__(self, cfg, max_len=50):
+        self.cfg = cfg
+        # dim_model = cfg["n_dim"]
+        dim_model = cfg["d_model"]
+
         super().__init__()
         pos_encoding = torch.zeros(max_len, dim_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)

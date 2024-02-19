@@ -6,8 +6,6 @@ from TF_module.attn import MHAttention
 from einops import rearrange, repeat
 
 # input : b 11 64 (batch, len, d-model)
-
-
 class Decoder(nn.Module):
     def __init__(self, cfg):
         super(Decoder, self).__init__()
@@ -54,7 +52,8 @@ class Decoder(nn.Module):
 class MultipleDecoder(nn.Module):
     def __init__(self, cfg):
         super(MultipleDecoder, self).__init__()
-        self.obj_query = nn.Parameter(torch.randn(cfg["decoder_params"]["x_shape"]))
+        obj_query_shape = [1, cfg['n_obj'], cfg['d_model']] 
+        self.obj_query = nn.Parameter(torch.randn(obj_query_shape))
 
         self.decoder_list = nn.ModuleList(
             [Decoder(cfg) for _ in range(cfg["decoder_params"]["n_iter"])]

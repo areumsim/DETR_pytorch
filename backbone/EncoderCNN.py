@@ -4,7 +4,9 @@ import torch.nn as nn
 import torchvision.models as models
 from torchvision import transforms
 
-from .dataloader_v3 import COCODataset, DataLoader
+from .dataloader_v3 import COCODataset
+from torch.utils.data import DataLoader
+
 from einops import rearrange
 
 

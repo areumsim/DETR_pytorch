@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 from pycocotools.coco import COCO
 from PIL import Image
@@ -22,6 +22,8 @@ import imgaug.augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 
 from einops import rearrange
+
+from util.box_ops import box_xyxy_to_cxcywh
 
 ## pycocotools  --
 #  getAnnIds  - Get ann ids that satisfy given filter conditions.
@@ -51,21 +53,28 @@ def make_transforms(image_set):
 
 class COCODataset(Dataset):
     def __init__(
-        self, data_dir, image_set, transform=None, visualize=True, collate_fn=None, width=640, height=640
+        self, cfg, transform=None, visualize=False, collate_fn=None
     ):
         super(COCODataset, self).__init__()
+        self.cfg = cfg
 
-        self.data_dir = data_dir
-        self.image_set = image_set
+        self.data_dir = cfg["data_dir"]
+        self.image_set = cfg["train_set"]
+
+        self.width = cfg["image_width"]
+        self.height = cfg["image_height"]
+
+        self.n_class = cfg["n_class"] # real_class + no_obj
+
 
         self.image_folrder = os.path.join(self.data_dir, self.image_set)
         self.anno_file = os.path.join(
-            data_dir.replace("/", "\\"),
+            self.data_dir.replace("/", "\\"),
             "annotations",
             "instances_" + self.image_set + ".json",
         )
 
-        self.transform = transform
+        self.transform = make_transforms(self.image_set)
         self.visualize = visualize
 
         self.getMask = True
@@ -85,15 +94,10 @@ class COCODataset(Dataset):
 
         self.load_classes()  # read class information
 
-        self.width = width
-        self.height = height
-
         ### category Info
         # self.catIds = self.coco.getCatIds(catNms=["person"])
         # self.catCnt = len(self.coco.getCatIds())
         # self.imgIds = self.coco.getImgIds(catIds=self.catIds)
-
-
         self.seq = iaa.Sequential(
             [
                 iaa.Resize((0.4, 0.5)),
@@ -156,7 +160,7 @@ class COCODataset(Dataset):
 
         ##############
         # pad annotations to have a consistent size
-        max_boxes = 20  # or any suitable maximum number of boxes
+        max_boxes = self.cfg["max_boxes"] # maximum number of boxes, consider y also as a set of size N padded with (no object).
         padded_annotations = np.ones((max_boxes, 5)) * -1
         num_boxes = min(len(annotations), max_boxes)
         padded_annotations[:num_boxes, :] = annotations[:num_boxes, :]
@@ -200,7 +204,7 @@ class COCODataset(Dataset):
 
         for ann in anns:
             bbox_x1, bbox_y1, bbox_x2, bbox_y2, label = ann
-            if label == 80:  # -1, No Obj #TODO : or Show No Obj
+            if label == (self.n_class-1):  # -1, No Obj #TODO : or Show No Obj
                 continue
 
             c = (np.random.random((1, 3)) * 0.6 + 0.4).tolist()[0]
@@ -245,8 +249,6 @@ class COCODataset(Dataset):
         # resize_height, resize_width = int(image.shape[0] * resize_ratio), int(
         #     image.shape[1] * resize_ratio
         # )
-
-
         original_img_pos = [0, 0, image.shape[1], image.shape[0], -99]
         annotation = np.vstack([annotation, original_img_pos])
         bbs = BoundingBoxesOnImage(
@@ -273,7 +275,6 @@ class COCODataset(Dataset):
             padding_mask[
                 new_img_pos[1] : new_img_pos[3], new_img_pos[0] : new_img_pos[2], :
             ] = 0
-
             # (for visualization purposes)
             # self.show_Anns(image, annotation, padding_mask)
 
@@ -286,17 +287,19 @@ class COCODataset(Dataset):
         # boxes = torch.FloatTensor(annotation[:, :4])
         # labels = torch.LongTensor(annotation[:, 4])
         padding_mask = torch.tensor(rearrange(padding_mask, "h w c -> c h w"))
-        annotation[:,4][annotation[:,4]==-1] = 80
+        annotation[:,4][annotation[:,4]==-1] = (self.n_class-1)
 
         # box_xyxy_to_cxcywh
-        x0 = annotation[:,0]
-        y0 = annotation[:,1]
-        x1 = annotation[:,2]
-        y1 = annotation[:,3]
+        # x0 = annotation[:,0]
+        # y0 = annotation[:,1]
+        # x1 = annotation[:,2]
+        # y1 = annotation[:,3]
 
-        b = [(x0 + x1) / 2, (y0 + y1) / 2,
-            (x1 - x0), (y1 - y0)]
-        annotation[:,:4] = np.array(b).T
+        # b = [(x0 + x1) / 2, (y0 + y1) / 2,
+        #     (x1 - x0), (y1 - y0)]
+        # annotation[:,:4] = np.array(b).T
+        new_box = box_xyxy_to_cxcywh(torch.tensor(annotation[:,:4])).numpy()
+        annotation[:,:4] = new_box
 
         return image, annotation, padding_mask
 
