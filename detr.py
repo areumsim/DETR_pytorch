@@ -91,14 +91,17 @@ def criterion(prob_class, predict_bbox, labels, cfg):
     flat_bbox = flat_labels[:,:4]
 
     ## classification cost
-    class_cost = -flat_prob_class[:,flat_class]
+    class_cost = flat_prob_class[:,flat_class]
     log_class_loss = torch.log(class_cost)
+    class_cost = -1*class_cost
 
     ## bbox cost
     boxes1 = box_ops.box_cxcywh_to_xyxy(flat_predict_bbox)
     boxes2 = box_ops.box_cxcywh_to_xyxy(flat_bbox)
 
     l1cost_bbox = torch.cdist(flat_predict_bbox, flat_bbox, p=1)
+    if torch.isnan(boxes1).any():
+        print('l1cost_bbox', boxes1)
     iou_cost = box_ops.generalized_box_iou(boxes1, boxes2)
 
     ## total cost
@@ -112,10 +115,9 @@ def criterion(prob_class, predict_bbox, labels, cfg):
     ## total loss
     bbox_loss = 5*l1cost_bbox + 2*iou_cost
     bbox_loss = bbox_loss*((flat_class != 80) * 1).unsqueeze(0)   # 실제 loss 계산 할때는, label이 없는애 bbox 만 제거 
-    loss = log_class_loss +  bbox_loss
+    loss = -log_class_loss +  bbox_loss
 
     multi_loss_matrix = rearrange(loss, '(b n) (d m) -> b n m d', b=prob_class.shape[0], d=prob_class.shape[0])
-
     for i in range(multi_loss_matrix.shape[0]):
         loss_mat[i] = multi_loss_matrix[i,:,:,i]
 
