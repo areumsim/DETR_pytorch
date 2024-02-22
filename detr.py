@@ -62,9 +62,9 @@ class DETR(nn.Module):
 
         ### loss for training
         
-        loss = criterion(prob_class, predict_bbox, labels, self.cfg )
+        loss, loss_list = criterion(prob_class, predict_bbox, labels, self.cfg )
 
-        return prob_class, predict_bbox, loss
+        return prob_class, predict_bbox, loss, loss_list
 
 
 def criterion(prob_class, predict_bbox, labels, cfg):
@@ -102,7 +102,7 @@ def criterion(prob_class, predict_bbox, labels, cfg):
     l1cost_bbox = torch.cdist(flat_predict_bbox, flat_bbox, p=1)
     if torch.isnan(boxes1).any():
         print('l1cost_bbox', boxes1)
-    iou_cost = box_ops.generalized_box_iou(boxes1, boxes2)
+    iou_cost = 1-box_ops.generalized_box_iou(boxes1, boxes2)    ### update : box 
 
     ## total cost
     cost = class_cost + 5*l1cost_bbox + 2*iou_cost
@@ -116,7 +116,7 @@ def criterion(prob_class, predict_bbox, labels, cfg):
     bbox_loss = 5*l1cost_bbox + 2*iou_cost
     bbox_loss = bbox_loss*((flat_class != 80) * 1).unsqueeze(0)   # 실제 loss 계산 할때는, label이 없는애 bbox 만 제거 
     loss = -log_class_loss +  bbox_loss
-
+    
     multi_loss_matrix = rearrange(loss, '(b n) (d m) -> b n m d', b=prob_class.shape[0], d=prob_class.shape[0])
     for i in range(multi_loss_matrix.shape[0]):
         loss_mat[i] = multi_loss_matrix[i,:,:,i]
@@ -143,10 +143,15 @@ def criterion(prob_class, predict_bbox, labels, cfg):
     #         #     print('bbox_losss', bbox_losss)
 
     #         loss_mat[:,n_pred,n_true] = class_nll + bbox_losss
-            
+
+    loss_list = [0,0,0] # [class_cost, l1cost_bbox, iou_cost]    
     loss = 0
     for i in range(loss_mat.shape[0]):
         match_idx = linear_sum_assignment(asnumpy(cost_mat[i]))
         loss += loss_mat[:,match_idx[0],match_idx[1]].mean()
 
-    return loss
+        loss_list[0] += class_cost[match_idx[0]*(i+1),match_idx[1]*(i+1)].mean()
+        loss_list[1] += l1cost_bbox[match_idx[0]*(i+1),match_idx[1]*(i+1)].mean()
+        loss_list[2] += iou_cost[match_idx[0]*(i+1),match_idx[1]*(i+1)].mean()
+        
+    return loss, loss_list

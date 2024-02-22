@@ -1,18 +1,18 @@
 data :
   # data_dir : "C:/Users/sar10/code/detr/cocodataset/"
   data_dir : 'C:/Users/wolve/arsim/detr_git/DETR_pytorch/cocodataset/'
-  train_set : "val2017"   # "train2017"
+  train_set : "train2017"   # "train2017"
   # valid_set  : "val2017" 
   image_width : 320
   image_height : 320
   n_class : 81   # 80 : class 개수 + 1 (no object, background)
-  max_boxes : 100  # Maximum number of objects in an image (y)
+  max_boxes : 100  # same as 'n_obj' / Maximum number of objects in an image (y)
 
 train_params:
   batch_size : 8
   learning_rate : 1.e-4
   weight_decay : 1.e-4
-  num_epoch : 10
+  num_epoch : 9999
 
 backbone_params:
     n_channel : 256

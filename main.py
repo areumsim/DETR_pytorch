@@ -5,13 +5,17 @@ import yaml
 from einops import rearrange
 import numpy as np
 
-from backbone.dataloader_v3 import COCODataset
+from dataloader_v3 import COCODataset
 from torch.utils.data import DataLoader
 
 from detr import DETR
 from tqdm import tqdm
 
 from util.box_ops import box_cxcywh_to_xyxy
+
+import wandb
+import random
+
 
 if __name__ == "__main__":
     # CUDA Version: 12.2
@@ -25,6 +29,26 @@ if __name__ == "__main__":
 
     batch_size = cfg['train_params']["batch_size"]
     num_epoch = cfg['train_params']["num_epoch"]
+
+
+    ###### start a new wandb run to track this script ######
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="DETR-pytorch",
+        name = "areumsim"
+        # # track hyperparameters and run metadata
+        # config={
+        # "learning_rate": cfg['train_params']["learning_rate"],
+        # "architecture": "ResNet50",
+        # "dataset": "coco",
+        # "epochs": num_epoch,
+        # }
+    )
+    # 실행 이름 설정
+    wandb.run.name = 'First wandb _ train with tr '
+    wandb.run.log_code(".")
+    wandb.run.save()
+
 
     ###### dataload & backbond ######
     coco_train = COCODataset(
@@ -53,8 +77,8 @@ if __name__ == "__main__":
             labels = label.to(device).float()
 
             optimizer.zero_grad()
-            prob_class, predict_bbox, loss = detr_model(images, labels.clone())
-
+            prob_class, predict_bbox, loss, loss_list = detr_model(images, labels.clone())
+            
             loss.backward()
             optimizer.step()
 
@@ -62,9 +86,18 @@ if __name__ == "__main__":
             # print(f"loss: {loss.item()}")
             
             batch_losses.append(loss.item())
+                
+            # log metrics to wandb
+            # loss_list :  class_loss, bbox_l1_loss, bbox_giou_loss
+            n_iter = epoch * len(loader_train) + i_batch + 1
+            # wandb.log({"loss": loss.item(), "iteration": n_iter}) 
+            wandb.log({"loss": loss.item()}, step=n_iter) 
+            wandb.log({"class_loss": loss_list[0].item()}, step=n_iter) 
+            wandb.log({"bbox_l1_loss": loss_list[1].item()}, step=n_iter) 
+            wandb.log({"bbox_giou_loss": loss_list[2].item()}, step=n_iter) 
 
             # for evaluation, draw a predicted bbox and class label
-            if i_batch % 50 == 0:
+            if i_batch % 1000 == 0:
                 i = 0
                 img = images[i].cpu().numpy().copy()
                 img *= np.array([0.229, 0.224, 0.225])[:,None,None]
@@ -121,10 +154,19 @@ if __name__ == "__main__":
                 cv2.imwrite(f"./result_image/result_{epoch}_{i_batch}.jpg", cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
                 cv2.waitKey(0)
 
-        
+                # log images to wandb
+                wandb.log({
+                    'images': wandb.Image(images[0]),
+                    'prediction result': wandb.Image(img)
+                })
+
+            # save model's checkpoint every 5000 batch
+            if i_batch % 5000 == 0:
+                torch.save(detr_model.state_dict(), f"./result_model/detr_model_e{epoch}_b{i_batch}_iter{n_iter}.pth")
 
         # save and show loss
-        epoch_losses.append(np.mean(batch_losses))
+        lss = np.mean(batch_losses)
+        epoch_losses.append(lss)
         # plt.plot(np.array(loss), 'r')
 
         plt.plot(np.arange(len(epoch_losses)), epoch_losses, marker='.', c='red', label='Trainset_loss')
@@ -133,9 +175,17 @@ if __name__ == "__main__":
         # plt.show()
         plt.savefig(f"./result_image/loss_{epoch}.png")
         
-        with open(f"./result_model/loss_{epoch}.txt", 'w') as f:
-            f.write('\n'.join(map(str, epoch_losses)))
+        with open(f"./result_model/loss.txt", 'w+') as f:
+            f.write('\n'.join(map(str, str(lss))))
+    
+        
 
     ## save model and loss
     torch.save(detr_model.state_dict(), f"./result_model/detr_model_final({epoch})_0219_1.pth")
-    torch.save(loss, f"./result_model/loss_final({epoch})_0219_1.txt")
+    torch.save(loss, f"./result_model/loss_final({epoch}).txt")
+
+    wandb.finish()
+
+
+## loss 를 따로 저장. (classification / box l1 loss / giou loss )
+## class가 80인 애들은 box를 안그리기

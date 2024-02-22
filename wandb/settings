@@ -1,0 +1,5 @@
+[default]
+entity = areumsim
+project = DETR-pytorch
+base_url = https://api.wandb.ai
+

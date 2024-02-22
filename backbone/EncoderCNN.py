@@ -4,7 +4,7 @@ import torch.nn as nn
 import torchvision.models as models
 from torchvision import transforms
 
-from .dataloader_v3 import COCODataset
+from dataloader_v3 import COCODataset
 from torch.utils.data import DataLoader
 
 from einops import rearrange
@@ -31,8 +31,9 @@ class EncoderCNN_resNet(nn.Module):
 
     def forward(self, images):
         """Extract feature vectors from input images."""
-        with torch.no_grad():
-            features = self.resnet(images)
+        # with torch.no_grad():
+        features = self.resnet(images)
+        
         # features = self.adaptive_pool(features)
         features = self.conv(features)
         return features
